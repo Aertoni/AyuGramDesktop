@@ -1,0 +1,153 @@
+name: Build Windows x64
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-x64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows x64 Debug
+    runs-on: windows-2022
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: tdesktop
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      TDESKTOP_API_ID: ${{ vars.TDESKTOP_API_ID || '2040' }}
+      TDESKTOP_API_HASH: ${{ secrets.TDESKTOP_API_HASH || vars.TDESKTOP_API_HASH || 'b18441a1ff607e10a989891a5462e627' }}
+
+    steps:
+      - name: Configure Git for Windows
+        working-directory: ${{ github.workspace }}
+        run: |
+          git config --global core.autocrlf true
+          git config --global core.longpaths true
+
+      - name: Check out source and submodules
+        uses: actions/checkout@v4
+        with:
+          path: tdesktop
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up Python
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Set up CMake and Ninja
+        run: python -m pip install --disable-pip-version-check cmake==3.31.10 ninja==1.13.0
+
+      - name: Set up MSVC x64
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          toolset: '14.44'
+          sdk: '10.0.26100.0'
+
+      - name: Record toolchain version
+        id: toolchain
+        run: '"version=$env:VCToolsVersion" >> $env:GITHUB_OUTPUT'
+
+      - name: Pin NASM for libvpx
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('Telegram/build/prepare/prepare.py')
+          source = path.read_bytes().decode('utf-8').replace('\r\n', '\n')
+          package = '        mingw-w64-x86_64-nasm ^\n'
+          anchor = '        mingw-w64-x86_64-pkgconf\n'
+          if source.count(package) != 1 or source.count(anchor) != 1:
+              raise SystemExit('The MSYS2 preparation stage has changed; update the NASM pin.')
+          source = source.replace(package, '')
+          source = source.replace(anchor, anchor + (
+              '    pacman -U --noconfirm '
+              'https://repo.msys2.org/mingw/mingw64/'
+              'mingw-w64-x86_64-nasm-3.01-1-any.pkg.tar.zst\n'
+          ))
+          path.write_bytes(source.replace('\n', '\r\n').encode('utf-8'))
+
+      - name: Restore build dependencies
+        id: dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            Libraries/win64
+            ThirdParty
+          key: windows-x64-debug-v1-msvc${{ steps.toolchain.outputs.version }}-python${{ steps.python.outputs.python-version }}-cmake3.31.10-${{ hashFiles('tdesktop/Telegram/build/prepare/prepare.py', 'tdesktop/Telegram/build/qt_version.py') }}
+          restore-keys: |
+            windows-x64-debug-v1-msvc${{ steps.toolchain.outputs.version }}-python${{ steps.python.outputs.python-version }}-cmake3.31.10-
+
+      - name: Prepare build dependencies
+        shell: cmd
+        run: call Telegram\build\prepare\win.bat skip-release silent
+
+      - name: Save build dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            Libraries/win64
+            ThirdParty
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+
+      - name: Generate portable debug symbols
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('cmake/options_win.cmake')
+          source = path.read_bytes()
+          if source.count(b'/DEBUG:FASTLINK') != 1:
+              raise SystemExit('The Windows linker options have changed; update the full PDB override.')
+          path.write_bytes(source.replace(b'/DEBUG:FASTLINK', b'/DEBUG:FULL'))
+
+      - name: Configure Debug build
+        shell: cmd
+        working-directory: tdesktop/Telegram
+        env:
+          CMAKE_GENERATOR: Visual Studio 17 2022
+        run: |
+          call configure.bat x64 ^
+            -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
+            -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
+            -D CMAKE_CONFIGURATION_TYPES=Debug ^
+            -D CMAKE_C_FLAGS=/FS ^
+            -D CMAKE_CXX_FLAGS=/FS
+
+      - name: Build AyuGram
+        run: cmake --build out --config Debug --target Telegram --parallel 2
+
+      - name: Verify executable
+        run: |
+          if (!(Test-Path out/Debug/AyuGram.exe -PathType Leaf)) {
+            throw 'The build did not produce out/Debug/AyuGram.exe.'
+          }
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: AyuGram-windows-x64-Debug
+          path: |
+            tdesktop/out/Debug/*.exe
+            tdesktop/out/Debug/*.dll
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: AyuGram-windows-x64-Debug-symbols
+          path: tdesktop/out/Debug/*.pdb
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 7

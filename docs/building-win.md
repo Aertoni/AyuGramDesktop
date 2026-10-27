@@ -5,6 +5,7 @@
 - [Initialize terminal](#initialize-terminal)
 - [Clone source code and prepare libraries](#clone-source-code-and-prepare-libraries)
 - [Build the project](#build-the-project)
+- [Build with GitHub Actions](#build-with-github-actions)
 - [Troubleshooting](#troubleshooting)
 
 ## Prepare folder
@@ -56,6 +57,23 @@ Go to ***BuildPath*\\tdesktop\\Telegram** and run
 * Open ***BuildPath*\\tdesktop\\out\\Telegram.slnx** in Visual Studio 2026
 * Select Telegram project and press Build > Build Telegram (Debug and Release configurations)
 * The result AyuGram.exe will be located in **D:\TBuild\tdesktop\out\Debug** (and **Release**)
+
+## Build with GitHub Actions
+
+The repository includes `.github/workflows/build.yml` for a Windows x64 Debug build.
+Push the workflow to the repository's default branch, enable GitHub Actions if
+needed, then select **Actions > Build Windows x64 > Run workflow**. You can
+select the branch to build in the dispatch form.
+
+The workflow uses the API credentials shown above. To use your own credentials,
+set the repository variable `TDESKTOP_API_ID` and the repository secret
+`TDESKTOP_API_HASH` under **Settings > Secrets and variables > Actions**.
+
+After a successful run, download `AyuGram-windows-x64-Debug` from the run's
+**Artifacts** section. Full PDB debug symbols are uploaded separately as
+`AyuGram-windows-x64-Debug-symbols` and can be used without the runner's
+object files and libraries. Dependencies are cached between runs; the first
+run prepares them from source.
 
 ## Troubleshooting
 
