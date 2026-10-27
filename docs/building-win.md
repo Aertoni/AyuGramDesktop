@@ -60,20 +60,22 @@ Go to ***BuildPath*\\tdesktop\\Telegram** and run
 
 ## Build with GitHub Actions
 
-The repository includes `.github/workflows/build.yml` for a Windows x64 Debug build.
+The repository includes `.github/workflows/build.yml` for Windows x64 builds.
 Push the workflow to the repository's default branch, enable GitHub Actions if
 needed, then select **Actions > Build Windows x64 > Run workflow**. You can
-select the branch to build in the dispatch form.
+select the branch and the `configuration` in the dispatch form. Choose
+`Debug` (the default) or `Release`.
 
 The workflow uses the API credentials shown above. To use your own credentials,
 set the repository variable `TDESKTOP_API_ID` and the repository secret
 `TDESKTOP_API_HASH` under **Settings > Secrets and variables > Actions**.
 
-After a successful run, download `AyuGram-windows-x64-Debug` from the run's
-**Artifacts** section. Full PDB debug symbols are uploaded separately as
-`AyuGram-windows-x64-Debug-symbols` and can be used without the runner's
-object files and libraries. Dependencies are cached between runs; the first
-run prepares them from source.
+After a successful run, download `AyuGram-windows-x64-Debug` or
+`AyuGram-windows-x64-Release` from the run's **Artifacts** section.
+Debug builds also upload full PDB symbols separately as
+`AyuGram-windows-x64-Debug-symbols`, which can be used without the runner's
+object files and libraries. Dependencies are cached separately for each
+configuration; the first run of each configuration prepares them from source.
 
 ## Troubleshooting
 

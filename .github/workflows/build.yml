@@ -2,23 +2,33 @@ name: Build Windows x64
 
 on:
   workflow_dispatch:
+    inputs:
+      configuration:
+        description: Build configuration
+        type: choice
+        required: true
+        default: Debug
+        options:
+          - Debug
+          - Release
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-windows-x64-${{ github.ref }}
+  group: build-windows-x64-${{ github.ref }}-${{ inputs.configuration }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Windows x64 Debug
+    name: Windows x64 ${{ inputs.configuration }}
     runs-on: windows-2022
     timeout-minutes: 360
     defaults:
       run:
         working-directory: tdesktop
     env:
+      BUILD_CONFIGURATION: ${{ inputs.configuration }}
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
       TDESKTOP_API_ID: ${{ vars.TDESKTOP_API_ID || '2040' }}
       TDESKTOP_API_HASH: ${{ secrets.TDESKTOP_API_HASH || vars.TDESKTOP_API_HASH || 'b18441a1ff607e10a989891a5462e627' }}
@@ -83,13 +93,19 @@ jobs:
           path: |
             Libraries/win64
             ThirdParty
-          key: windows-x64-debug-v1-msvc${{ steps.toolchain.outputs.version }}-python${{ steps.python.outputs.python-version }}-cmake3.31.10-${{ hashFiles('tdesktop/Telegram/build/prepare/prepare.py', 'tdesktop/Telegram/build/qt_version.py') }}
+          key: windows-x64-${{ inputs.configuration }}-v1-msvc${{ steps.toolchain.outputs.version }}-python${{ steps.python.outputs.python-version }}-cmake3.31.10-${{ hashFiles('tdesktop/Telegram/build/prepare/prepare.py', 'tdesktop/Telegram/build/qt_version.py') }}
           restore-keys: |
-            windows-x64-debug-v1-msvc${{ steps.toolchain.outputs.version }}-python${{ steps.python.outputs.python-version }}-cmake3.31.10-
+            windows-x64-${{ inputs.configuration }}-v1-msvc${{ steps.toolchain.outputs.version }}-python${{ steps.python.outputs.python-version }}-cmake3.31.10-
 
       - name: Prepare build dependencies
         shell: cmd
-        run: call Telegram\build\prepare\win.bat skip-release silent
+        run: |
+          if "%BUILD_CONFIGURATION%"=="Release" (
+            call Telegram\build\prepare\win.bat silent
+          ) else (
+            call Telegram\build\prepare\win.bat skip-release silent
+          )
+          if errorlevel 1 exit /b %errorlevel%
 
       - name: Save build dependencies
         if: steps.dependencies.outputs.cache-hit != 'true'
@@ -101,6 +117,7 @@ jobs:
           key: ${{ steps.dependencies.outputs.cache-primary-key }}
 
       - name: Generate portable debug symbols
+        if: inputs.configuration == 'Debug'
         shell: python
         run: |
           from pathlib import Path
@@ -111,7 +128,7 @@ jobs:
               raise SystemExit('The Windows linker options have changed; update the full PDB override.')
           path.write_bytes(source.replace(b'/DEBUG:FASTLINK', b'/DEBUG:FULL'))
 
-      - name: Configure Debug build
+      - name: Configure build
         shell: cmd
         working-directory: tdesktop/Telegram
         env:
@@ -120,34 +137,35 @@ jobs:
           call configure.bat x64 ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
-            -D CMAKE_CONFIGURATION_TYPES=Debug ^
+            -D CMAKE_CONFIGURATION_TYPES=%BUILD_CONFIGURATION% ^
             -D CMAKE_C_FLAGS=/FS ^
             -D CMAKE_CXX_FLAGS=/FS
 
       - name: Build AyuGram
-        run: cmake --build out --config Debug --target Telegram --parallel 2
+        run: cmake --build out --config "$env:BUILD_CONFIGURATION" --target Telegram --parallel 2
 
       - name: Verify executable
         run: |
-          if (!(Test-Path out/Debug/AyuGram.exe -PathType Leaf)) {
-            throw 'The build did not produce out/Debug/AyuGram.exe.'
+          if (!(Test-Path "out/$env:BUILD_CONFIGURATION/AyuGram.exe" -PathType Leaf)) {
+            throw "The build did not produce out/$env:BUILD_CONFIGURATION/AyuGram.exe."
           }
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: AyuGram-windows-x64-Debug
+          name: AyuGram-windows-x64-${{ inputs.configuration }}
           path: |
-            tdesktop/out/Debug/*.exe
-            tdesktop/out/Debug/*.dll
+            tdesktop/out/${{ inputs.configuration }}/*.exe
+            tdesktop/out/${{ inputs.configuration }}/*.dll
           if-no-files-found: error
           retention-days: 14
 
       - name: Upload debug symbols
+        if: inputs.configuration == 'Debug'
         uses: actions/upload-artifact@v4
         with:
-          name: AyuGram-windows-x64-Debug-symbols
-          path: tdesktop/out/Debug/*.pdb
+          name: AyuGram-windows-x64-${{ inputs.configuration }}-symbols
+          path: tdesktop/out/${{ inputs.configuration }}/*.pdb
           if-no-files-found: error
           compression-level: 1
           retention-days: 7
