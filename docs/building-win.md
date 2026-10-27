@@ -77,6 +77,9 @@ Debug builds also upload full PDB symbols separately as
 object files and libraries. Dependencies are cached separately for each
 configuration; the first run of each configuration prepares them from source.
 
+The application build runs one MSBuild project at a time with up to two MSVC
+compilation workers to reduce precompiled-header memory usage.
+
 ## Troubleshooting
 
 ### Error building libvpx

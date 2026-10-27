@@ -142,7 +142,9 @@ jobs:
             -D CMAKE_CXX_FLAGS=/FS
 
       - name: Build AyuGram
-        run: cmake --build out --config "$env:BUILD_CONFIGURATION" --target Telegram --parallel 2
+        env:
+          _CL_: /MP2
+        run: cmake --build out --config "$env:BUILD_CONFIGURATION" --target Telegram --parallel 1
 
       - name: Verify executable
         run: |
