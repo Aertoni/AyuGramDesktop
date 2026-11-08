@@ -77,6 +77,19 @@ Debug builds also upload full PDB symbols separately as
 object files and libraries. Dependencies are cached separately for each
 configuration; the first run of each configuration prepares them from source.
 
+Selecting `Release` also publishes the successful build to this repository's
+**Releases** page, with automatically generated release notes and a ZIP containing
+the executable and any accompanying DLLs. Download and extract the ZIP, then run
+`AyuGram.exe`.
+
+The release tag uses `AppVersionStr` from `Telegram/build/version` and the workflow
+run number, for example `v7.2.9-build.123`. The ZIP is named
+`AyuGram-windows-x64-v7.2.9-build.123.zip`. Each new run creates a separate release;
+rerunning the same run updates its existing release and replaces its ZIP.
+The tag points to the commit used by the build. Publishing uses the built-in
+`GITHUB_TOKEN`, so no additional secret is required. Debug builds only upload
+Actions artifacts.
+
 The application build runs one MSBuild project at a time with up to two MSVC
 compilation workers to reduce precompiled-header memory usage.
 

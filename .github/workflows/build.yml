@@ -24,6 +24,9 @@ jobs:
     name: Windows x64 ${{ inputs.configuration }}
     runs-on: windows-2022
     timeout-minutes: 360
+    outputs:
+      release-version: ${{ steps.release.outputs.version }}
+      release-tag: ${{ steps.release.outputs.tag }}
     defaults:
       run:
         working-directory: tdesktop
@@ -152,6 +155,24 @@ jobs:
             throw "The build did not produce out/$env:BUILD_CONFIGURATION/AyuGram.exe."
           }
 
+      - name: Prepare release metadata
+        if: inputs.configuration == 'Release'
+        id: release
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          fields = dict(
+              line.split(maxsplit=1)
+              for line in Path('Telegram/build/version').read_text(encoding='utf-8').splitlines()
+              if line.strip()
+          )
+          version = fields['AppVersionStr']
+          tag = f"v{version}-build.{os.environ['GITHUB_RUN_NUMBER']}"
+          with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as output:
+              output.write(f'version={version}\ntag={tag}\n')
+
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
@@ -171,3 +192,40 @@ jobs:
           if-no-files-found: error
           compression-level: 1
           retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    if: inputs.configuration == 'Release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download executable
+        uses: actions/download-artifact@v4
+        with:
+          name: AyuGram-windows-x64-Release
+          path: release
+
+      - name: Package release
+        env:
+          RELEASE_TAG: ${{ needs.build.outputs.release-tag }}
+        run: |
+          test -f release/AyuGram.exe
+          cd release
+          zip -r "../AyuGram-windows-x64-${RELEASE_TAG}.zip" .
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.release-tag }}
+          target_commitish: ${{ github.sha }}
+          name: AyuGram ${{ needs.build.outputs.release-version }} (Windows x64, build ${{ github.run_number }})
+          body: |
+            Windows x64 Release build from commit `${{ github.sha }}`.
+            Download and extract `AyuGram-windows-x64-${{ needs.build.outputs.release-tag }}.zip`, then run `AyuGram.exe`.
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: AyuGram-windows-x64-${{ needs.build.outputs.release-tag }}.zip
